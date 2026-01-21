@@ -159,14 +159,11 @@ void mainWindow::loadLogoTexture(int width, int height, int channels, const std:
     images for import
 */
 void mainWindow::openImages() {
-    auto selection = ShowFileOpenDialog();
-
-    if (selection.size() > 0) {
-        dispImportPop = true;
-        importFiles = selection;
-        checkForRaw();
-    }
-
+    IGFD::FileDialogConfig config;
+    config.path = ".";
+    config.countSelectionMax = 0; // for infinite
+    config.flags = ImGuiFileDialogFlags_Modal;
+    IGFD::FileDialog::Instance()->OpenDialog("ChooseImportImages", "Choose File", ".*", config);
 }
 
 //--- Open JSON ---//
@@ -175,29 +172,20 @@ void mainWindow::openImages() {
     file for importing
 */
 bool mainWindow::openJSON() {
-    auto selection = ShowFileOpenDialog(false);
-
-    if (selection.size() > 0) {
-        if (validRoll()) {
-            if(activeRoll()->importRollMetaJSON(selection[0])) {
-                //rollRender();
-                return true;
-            } else {
-                std::strcpy(ackError, "Failed to parse metadata file!");
-            }
-        } else {
-            std::strcpy(ackError, "Invalid roll selected!");
-        }
-    }
+    IGFD::FileDialogConfig config;
+    config.path = ".";
+    config.countSelectionMax = 1;
+    config.flags = ImGuiFileDialogFlags_Modal;
+    IGFD::FileDialog::Instance()->OpenDialog("ChooseRollJSON", "Choose Roll Metadata", ".json", config);
     return false;
 }
 
 bool mainWindow::openImageMeta() {
-    imgMetImp = ShowFileOpenDialog(false);
-
-    if (imgMetImp.size() > 0) {
-        return true;
-    }
+    IGFD::FileDialogConfig config;
+    config.path = ".";
+    config.countSelectionMax = 1;
+    config.flags = ImGuiFileDialogFlags_Modal;
+    IGFD::FileDialog::Instance()->OpenDialog("ChooseImageJSON", "Choose Image Metadata", ".json", config);
     return false;
 }
 
@@ -223,15 +211,11 @@ bool mainWindow::setImpImage() {
     as rolls
 */
 void mainWindow::openRolls() {
-    auto selection = ShowFolderSelectionDialog();
-    // Do something with selection
-    //int activePos = activeRollSize();
-    if (selection.size() > 0) {
-        std::sort(selection.begin(), selection.end());
-        dispImpRollPop = true;
-        importFiles = selection;
-        checkForRaw();
-    }
+    IGFD::FileDialogConfig config;
+    config.path = ".";
+    config.countSelectionMax = 0; // for infinite
+    config.flags = ImGuiFileDialogFlags_Modal;
+    IGFD::FileDialog::Instance()->OpenDialog("ChooseImportRolls", "Choose Directory", nullptr, config);
 }
 
 //--- Export Images ---//

@@ -117,6 +117,7 @@ set(FILMVERT_SRCS
     src/threadPool.h
     src/preferences.cpp
     src/fileIO.cpp
+    src/ImGuiFileDialog.cpp
 )
 
 

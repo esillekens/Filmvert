@@ -185,31 +185,14 @@ void mainWindow::menuBar() {
             // Import Roll Metadata
             if (ImGui::MenuItem("Import Roll Metadata")) {
                 if (validRoll()) {
-                    if (openJSON()) {
-                        imMatchPopTrig = true;
-                        ImMatchRoll = true;
-                    } else {
-                        std::string err = ackError;
-                        if (!err.empty()) {
-                            std::strcpy(ackMsg, "Metadata failed to import:");
-                            ackPopTrig = true;
-                        }
-                    }
+                    openJSON();
                 }
             }
 
             // Import Image Metadata
             if (ImGui::MenuItem("Import Image Metadata")) {
                 if (validIm()) {
-                    if (openImageMeta()) {
-                        imMatchPopTrig = true;
-                    } else {
-                        std::string err = ackError;
-                        if (!err.empty()) {
-                            std::strcpy(ackMsg, "Metadata failed to import:");
-                            ackPopTrig = true;
-                        }
-                    }
+                    openImageMeta();
                 }
             }
             ImGui::Separator();

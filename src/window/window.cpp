@@ -103,6 +103,7 @@ int mainWindow::openWindow()
     std::memset(ocioPath, 0, sizeof(ocioPath));
     std::memset(rollNameBuf, 0, sizeof(rollNameBuf));
     std::memset(rollPath, 0, sizeof(rollPath));
+    std::memset(exportPathBuf, 0, sizeof(exportPathBuf));
 
 
     // Setup Dear ImGui context
@@ -386,6 +387,7 @@ int mainWindow::openWindow()
         }
 
         // Popup functions
+        fileDialogPopup();
         importImagePopup();
         importRollPopup();
         batchRenderPopup();

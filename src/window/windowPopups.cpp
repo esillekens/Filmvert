@@ -132,9 +132,11 @@ void mainWindow::importImagePopup() {
             ImGui::InputText("###rPath", rollPath, IM_ARRAYSIZE(rollPath));
             ImGui::SameLine();
             if (ImGui::Button("Browse")) {
-                auto result = ShowFolderSelectionDialog(false);
-                if (!result.empty())
-                    strcpy(rollPath, result[0].c_str());
+                IGFD::FileDialogConfig config;
+                config.path = ".";
+                config.countSelectionMax = 1;
+                config.flags = ImGuiFileDialogFlags_Modal;
+                IGFD::FileDialog::Instance()->OpenDialog("ChooseNewRollDir", "Choose Roll Directory", nullptr, config);
             }
             if (ImGui::Button("Cancel")) {
                 newRollPopup = false;
@@ -167,98 +169,160 @@ void mainWindow::importImagePopup() {
 
 
 
-        if (totalTasks != 0 && importFiles.size() > 0) {
-            // We're importing, show progress
-            ImGui::ProgressBar((float)completedTasks / (float)totalTasks);
-            ImGui::Text("Importing Images...");
-        }
+            if (totalTasks != 0 && importFiles.size() > 0) {
+                // We're importing, show progress
+                ImGui::ProgressBar((float)completedTasks / (float)totalTasks);
+                ImGui::Text("Importing Images...");
+            }
 
-        // Check if all images are files
-        // Prompt to import images to which roll
-        // Work out ui for that
-        // Also count images?
-        if (ImGui::Button("Cancel")) {
-            impRoll = 0;
-            dispImportPop = false;
-            impRawCheck = false;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        bool impDisabled = false;
-        if (activeRolls.size() < 1 || totalTasks > 0) {
-            ImGui::BeginDisabled();
-            impDisabled = true;
-        }
+            // Check if all images are files
+            // Prompt to import images to which roll
+            // Work out ui for that
+            // Also count images?
+            if (ImGui::Button("Cancel")) {
+                impRoll = 0;
+                dispImportPop = false;
+                impRawCheck = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            bool impDisabled = false;
+            if (activeRolls.size() < 1 || totalTasks > 0) {
+                ImGui::BeginDisabled();
+                impDisabled = true;
+            }
 
-        if (ImGui::Button("Import")) {
-            // Here's all the juicy bits
+                    if (ImGui::Button("Import")) {
 
-            std::thread impThread = std::thread{[this]() {
-                size_t baseIndex = activeRolls[impRoll].rollSize();
-                completedTasks = 0;
-                totalTasks = importFiles.size();
-                activeRolls[impRoll].imagesLoading = true;
-                std::vector<std::future<IndexedResult>> futures;
-                for (size_t i = 0; i < importFiles.size(); ++i) {
-                        const std::string& file = importFiles[i];
-                        futures.push_back(tPool->submit([file, i, this]() -> IndexedResult {
-                            auto result = readImage(file, rawSet, importOCIO);
-                            ++completedTasks; // Increment counter when done
-                            return IndexedResult{i, std::move(result)};
-                        }));
-                }
-                std::vector<IndexedResult> results;
-                results.reserve(futures.size());
-                for (auto& f : futures)
-                    results.push_back(f.get());
+                        // Here's all the juicy bits
 
-                std::sort(results.begin(), results.end(),
-                        [](const IndexedResult& a, const IndexedResult& b) {
-                        return a.index < b.index;
+            
+
+                        std::thread impThread([this]() {
+
+                            size_t baseIndex = activeRolls[impRoll].rollSize();
+
+                            completedTasks = 0;
+
+                            totalTasks = importFiles.size();
+
+                            activeRolls[impRoll].imagesLoading = true;
+
+                            std::vector<std::future<IndexedResult>> futures;
+
+                            for (size_t i = 0; i < importFiles.size(); ++i) {
+
+                                    const std::string& file = importFiles[i];
+
+                                    futures.push_back(tPool->submit([file, i, this]() -> IndexedResult {
+
+                                        auto result = readImage(file, rawSet, importOCIO);
+
+                                        ++completedTasks; // Increment counter when done
+
+                                        return IndexedResult{i, std::move(result)};
+
+                                    }));
+
+                            }
+
+                            std::vector<IndexedResult> results;
+
+                            results.reserve(futures.size());
+
+                            for (auto& f : futures)
+
+                                results.push_back(f.get());
+
+            
+
+                            std::sort(results.begin(), results.end(),
+
+                                    [](const IndexedResult& a, const IndexedResult& b) {
+
+                                    return a.index < b.index;
+
+                                    });
+
+            
+
+                            for (auto& res : results) {
+
+                                if (std::holds_alternative<image>(res.result)) {
+
+                                    activeRolls[impRoll].images.emplace_back(std::get<image>(res.result));
+
+                                } else {
+
+                                    LOG_ERROR("Error: {}", std::get<std::string>(res.result));
+
+                                }
+
+                            }
+
+                            for (int i = baseIndex; i < activeRolls[impRoll].rollSize(); i++) {
+
+                                image *img = getImage(impRoll, i);
+
+            
+
+                                if (img) {
+
+                                    imgRender(img, r_bg);
+
+                                    img->imgState.setPtrs(&img->imgMeta, &img->imgParam, &img->needRndr);
+
+                                    img->imgMeta.rollName = activeRolls[impRoll].rollName;
+
+                                    img->imgMeta.frameNumber = i + 1;
+
+                                    img->rollPath = activeRolls[impRoll].rollPath;
+
+                                }
+
+            
+
+            
+
+                            }
+
+                            activeRolls[impRoll].rollLoaded = true;
+
+                            activeRolls[impRoll].imagesLoading = false;
+
+                            selRoll = impRoll;
+
+                            dispImportPop = false;
+
+                            totalTasks = 0;
+
+                            completedTasks = 0;
+
+                            impRoll = 0;
+
+                            importFiles.clear();
+
+                            rawSet.pakonHeader = false;
+
+                            impRawCheck = false;
+
+            
+
                         });
 
-                for (auto& res : results) {
-                    if (std::holds_alternative<image>(res.result)) {
-                        activeRolls[impRoll].images.emplace_back(std::get<image>(res.result));
-                    } else {
-                        LOG_ERROR("Error: {}", std::get<std::string>(res.result));
-                    }
-                }
-                for (int i = baseIndex; i < activeRolls[impRoll].rollSize(); i++) {
-                    image *img = getImage(impRoll, i);
+                        impThread.detach();
 
-                    if (img) {
-                        imgRender(img, r_bg);
-                        img->imgState.setPtrs(&img->imgMeta, &img->imgParam, &img->needRndr);
-                        img->imgMeta.rollName = activeRolls[impRoll].rollName;
-                        img->imgMeta.frameNumber = i + 1;
-                        img->rollPath = activeRolls[impRoll].rollPath;
                     }
 
-
-                }
-                activeRolls[impRoll].rollLoaded = true;
-                activeRolls[impRoll].imagesLoading = false;
-                selRoll = impRoll;
-                dispImportPop = false;
-                totalTasks = 0;
-                completedTasks = 0;
-                impRoll = 0;
-                importFiles.clear();
-                rawSet.pakonHeader = false;
-                impRawCheck = false;
-
-            }};
-            impThread.detach();
+            
+            ImGui::Spacing();
+            if (impDisabled)
+                ImGui::EndDisabled();
+            if (!dispImportPop)
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
         }
-        ImGui::Spacing();
-        if (impDisabled)
-            ImGui::EndDisabled();
-        if (!dispImportPop)
-            ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
     }
-}
 
 //--- Import Roll Popup ---//
 /*
@@ -300,114 +364,115 @@ void mainWindow::importRollPopup() {
             impDisable = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Import")) {
-            if (importFiles.size() < 1) {
-                //Nothing to import?
-                dispImpRollPop = false;
-                ImGui::CloseCurrentPopup();
-            }
-            std::thread impThread = std::thread{[this]() {
-                completedTasks = 0;
-                for (int r = 0; r < importFiles.size(); r++) {
-                    std::vector<std::string> images;
-                    const std::filesystem::path sandbox{importFiles[r]};
-                    for (auto const& dir_entry : std::filesystem::directory_iterator{sandbox}) {
-                        if (dir_entry.is_regular_file()) {
-                            //Found an image in root of selection
-                            if (dir_entry.path().extension().string() != ".xmp" &&
-                                dir_entry.path().extension().string() != ".fvi" &&
-                                dir_entry.path().extension().string() != ".json" &&
-                                !is_hidden(dir_entry.path()) &&
-                                dir_entry.path().stem().string() != std::filesystem::path(importFiles[r]).stem().string()) {
-                                    // Ignore files we make that are definitely not images
-                                    images.push_back(dir_entry.path().string());
-
+                if (ImGui::Button("Import")) {
+                    if (importFiles.size() < 1) {
+                        //Nothing to import?
+                        dispImpRollPop = false;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    std::thread impThread([this]() {
+                        completedTasks = 0;
+                        for (int r = 0; r < importFiles.size(); r++) {
+                            std::vector<std::string> images;
+                            const std::filesystem::path sandbox{importFiles[r]};
+                            for (auto const& dir_entry : std::filesystem::directory_iterator{sandbox}) {
+                                if (dir_entry.is_regular_file()) {
+                                    //Found an image in root of selection
+                                    if (dir_entry.path().extension().string() != ".xmp" &&
+                                        dir_entry.path().extension().string() != ".fvi" &&
+                                        dir_entry.path().extension().string() != ".json" &&
+                                        !is_hidden(dir_entry.path()) &&
+                                        dir_entry.path().stem().string() != std::filesystem::path(importFiles[r]).stem().string()) {
+                                            // Ignore files we make that are definitely not images
+                                            images.push_back(dir_entry.path().string());
+        
+                                        }
+        
                                 }
-
+                            }
+                            // Sort the images
+                            std::sort(images.begin(), images.end());
+                            totalTasks = images.size();
+                            int thisRoll = activeRolls.size();
+                            // Add the roll to the library
+                            std::string newRollName = std::filesystem::path(importFiles[r]).stem().string();
+                            activeRolls.emplace_back(filmRoll(newRollName));
+                            //impRoll = activeRolls.size() - 1;
+                            activeRolls[thisRoll].imagesLoading = true;
+                            // Launch the thread pool
+                            std::vector<std::future<IndexedResult>> futures;
+                            for (size_t i = 0; i < images.size(); ++i) {
+                                    const std::string& file = images[i];
+                                    futures.push_back(tPool->submit([file, i, r, this]() -> IndexedResult {
+                                        auto result = readImage(file, rawSet, importOCIO, r == 0 ? false : true);
+                                        ++completedTasks; // Increment counter when done
+                                        return IndexedResult{i, std::move(result)};
+                                    }));
+                            }
+        
+                            std::vector<IndexedResult> results;
+                            results.reserve(futures.size());
+                            for (auto& f : futures)
+                                results.push_back(f.get());
+        
+                            std::sort(results.begin(), results.end(),
+                                    [](const IndexedResult& a, const IndexedResult& b) {
+                                    return a.index < b.index;
+                                    });
+        
+                            for (auto& res : results) {
+                                if (std::holds_alternative<image>(res.result)) {
+                                    activeRolls[thisRoll].images.emplace_back(std::get<image>(res.result));
+                                } else {
+                                    LOG_ERROR("Error: {}", std::get<std::string>(res.result));
+                                }
+                            }
+                            activeRolls[thisRoll].sortRoll();
+                            int maxInt = 0;
+                            for (int i = 0; i < activeRolls[thisRoll].rollSize(); i++) {
+                                image* thisIm = getImage(thisRoll, i);
+                                if (thisIm) {
+                                    imgRender(thisIm, r_bg);
+                                    thisIm->imgMeta.rollName = activeRolls[thisRoll].rollName;
+                                    thisIm->rollPath = importFiles[r];
+                                    thisIm->imgState.setPtrs(&thisIm->imgMeta, &thisIm->imgParam, &thisIm->needRndr);
+                                    maxInt = thisIm->imgMeta.frameNumber != 9999 ? std::max(std::min(thisIm->imgMeta.frameNumber, 9999), maxInt) : maxInt;
+                                    if (thisIm->imgMeta.frameNumber == 9999)
+                                        maxInt++;
+                                    thisIm->imgMeta.frameNumber = thisIm->imgMeta.frameNumber == 9999 ? maxInt : thisIm->imgMeta.frameNumber;
+        
+                                }
+                            }
+        
+                            activeRolls[thisRoll].rollLoaded = false;
+                            if (r == 0) {
+                                // Only do this for the first roll
+                                selRoll = thisRoll;
+                                dispImpRollPop = false; //Finish the rest of the processing in BG
+                                totalTasks = importFiles.size();
+                                completedTasks = 1;
+                                activeRolls[thisRoll].rollLoaded = true;
+                                if (activeRolls[thisRoll].images.size() > 0)
+                                    activeRolls[thisRoll].images[0].selected = true;
+                            }
+                            activeRolls[thisRoll].selIm = activeRolls[thisRoll].rollSize() > 0 ? 0 : -1;
+                            activeRolls[thisRoll].imagesLoading = false;
+                            activeRolls[thisRoll].rollPath = importFiles[r];
+        
                         }
-                    }
-                    // Sort the images
-                    std::sort(images.begin(), images.end());
-                    totalTasks = images.size();
-                    int thisRoll = activeRolls.size();
-                    // Add the roll to the library
-                    std::string newRollName = std::filesystem::path(importFiles[r]).stem().string();
-                    activeRolls.emplace_back(filmRoll(newRollName));
-                    //impRoll = activeRolls.size() - 1;
-                    activeRolls[thisRoll].imagesLoading = true;
-                    // Launch the thread pool
-                    std::vector<std::future<IndexedResult>> futures;
-                    for (size_t i = 0; i < images.size(); ++i) {
-                            const std::string& file = images[i];
-                            futures.push_back(tPool->submit([file, i, r, this]() -> IndexedResult {
-                                auto result = readImage(file, rawSet, importOCIO, r == 0 ? false : true);
-                                ++completedTasks; // Increment counter when done
-                                return IndexedResult{i, std::move(result)};
-                            }));
-                    }
-
-                    std::vector<IndexedResult> results;
-                    results.reserve(futures.size());
-                    for (auto& f : futures)
-                        results.push_back(f.get());
-
-                    std::sort(results.begin(), results.end(),
-                            [](const IndexedResult& a, const IndexedResult& b) {
-                            return a.index < b.index;
-                            });
-
-                    for (auto& res : results) {
-                        if (std::holds_alternative<image>(res.result)) {
-                            activeRolls[thisRoll].images.emplace_back(std::get<image>(res.result));
-                        } else {
-                            LOG_ERROR("Error: {}", std::get<std::string>(res.result));
-                        }
-                    }
-                    activeRolls[thisRoll].sortRoll();
-                    int maxInt = 0;
-                    for (int i = 0; i < activeRolls[thisRoll].rollSize(); i++) {
-                        image* thisIm = getImage(thisRoll, i);
-                        if (thisIm) {
-                            imgRender(thisIm, r_bg);
-                            thisIm->imgMeta.rollName = activeRolls[thisRoll].rollName;
-                            thisIm->rollPath = importFiles[r];
-                            thisIm->imgState.setPtrs(&thisIm->imgMeta, &thisIm->imgParam, &thisIm->needRndr);
-                            maxInt = thisIm->imgMeta.frameNumber != 9999 ? std::max(std::min(thisIm->imgMeta.frameNumber, 9999), maxInt) : maxInt;
-                            if (thisIm->imgMeta.frameNumber == 9999)
-                                maxInt++;
-                            thisIm->imgMeta.frameNumber = thisIm->imgMeta.frameNumber == 9999 ? maxInt : thisIm->imgMeta.frameNumber;
-
-                        }
-                    }
-
-                    activeRolls[thisRoll].rollLoaded = false;
-                    if (r == 0) {
-                        // Only do this for the first roll
-                        selRoll = thisRoll;
-                        dispImpRollPop = false; //Finish the rest of the processing in BG
-                        totalTasks = importFiles.size();
-                        completedTasks = 1;
-                        activeRolls[thisRoll].rollLoaded = true;
-                        if (activeRolls[thisRoll].images.size() > 0)
-                            activeRolls[thisRoll].images[0].selected = true;
-                    }
-                    activeRolls[thisRoll].selIm = activeRolls[thisRoll].rollSize() > 0 ? 0 : -1;
-                    activeRolls[thisRoll].imagesLoading = false;
-                    activeRolls[thisRoll].rollPath = importFiles[r];
-
+                        // After all images have finished
+                        totalTasks = 0;
+                        completedTasks = 0;
+                        impRoll = 0;
+                        importFiles.clear();
+                        rawSet.pakonHeader = false;
+                        impRawCheck = false;
+        
+        
+                    });
+                    impThread.detach();
                 }
-                // After all images have finished
-                totalTasks = 0;
-                completedTasks = 0;
-                impRoll = 0;
-                importFiles.clear();
-                rawSet.pakonHeader = false;
-                impRawCheck = false;
-
-
-            }};
-            impThread.detach();
-        }
+        
         if (impDisable)
             ImGui::EndDisabled();
         ImGui::Spacing();
@@ -452,8 +517,7 @@ void mainWindow::batchRenderPopup() {
                 //ImGuiSelectionExternalStorage storage_wrapper;
                 //storage_wrapper.AdapterSetItemSelected = [](ImGuiSelectionExternalStorage* self, int n, bool selected) { activeRolls[n].selected = selected; };
                 //storage_wrapper.ApplyRequests(ms_io);
-                for (int n = 0; n < activeRolls.size(); n++)
-                {
+                for (int n = 0; n < activeRolls.size(); n++) {
                     ImGui::SetNextItemSelectionUserData(n);
                     ImGui::Checkbox(activeRolls[n].rollName.c_str(), &activeRolls[n].selected);
                 }
@@ -516,19 +580,36 @@ void mainWindow::batchRenderPopup() {
 
         ImGui::Separator();
 
-        ImGui::Checkbox("Overwrite Existing File(s)?", &expSetting.overwrite);
+                ImGui::Checkbox("Overwrite Existing File(s)?", &expSetting.overwrite);
 
-        // Output Directory
-        static char buf1[256] = "";
-        ImGui::InputTextWithHint("###Path", "Save Path", buf1, IM_ARRAYSIZE(buf1));
-        ImGui::SameLine();
-        if (ImGui::Button("Browse")) {
-            auto directory = ShowFolderSelectionDialog(false);
-            if (!directory.empty()) {
-                strcpy(buf1, directory[0].c_str());
-            }
+        
 
-        }
+                        // Output Directory
+
+        
+
+                        ImGui::InputTextWithHint("###Path", "Save Path", exportPathBuf, IM_ARRAYSIZE(exportPathBuf));
+
+        
+
+                        ImGui::SameLine();
+
+        
+
+                        if (ImGui::Button("Browse")) {
+
+        
+
+                
+
+        
+                    IGFD::FileDialogConfig config;
+                    config.path = ".";
+                    config.countSelectionMax = 1;
+                    config.flags = ImGuiFileDialogFlags_Modal;
+                    IGFD::FileDialog::Instance()->OpenDialog("ChooseExportDir", "Choose Export Directory", nullptr, config);
+                }
+        
         if (expRolls)
             ImGui::Text("(Rolls will save in sub-directories)");
 
@@ -541,7 +622,7 @@ void mainWindow::batchRenderPopup() {
             ImGui::CloseCurrentPopup();
         }
 
-        if (std::string(buf1).empty())  // If save path is empty
+        if (std::string(exportPathBuf).empty())  // If save path is empty
             disableSet = true;
 
         if (disableSet) {
@@ -552,7 +633,7 @@ void mainWindow::batchRenderPopup() {
         if(ImGui::Button("Save")) {
             isExporting = true;
             exportParam params;
-            expSetting.outPath = buf1;
+            expSetting.outPath = exportPathBuf;
             expSetting.outPath += "/";
 
             elapsedTime = 0;
@@ -831,11 +912,11 @@ void mainWindow::globalMetaPopup() {
             IM_ARRAYSIZE(metaEdit.rollPath));
         ImGui::SameLine();
         if (ImGui::Button("Browse")) {
-            auto folder = ShowFolderSelectionDialog(false);
-            if (!folder.empty()) {
-                std::strcpy(metaEdit.rollPath, folder[0].c_str());
-                metaEdit.a_rollPath = true;
-            }
+            IGFD::FileDialogConfig config;
+            config.path = ".";
+            config.countSelectionMax = 1;
+            config.flags = ImGuiFileDialogFlags_Modal;
+            IGFD::FileDialog::Instance()->OpenDialog("ChooseRollPath", "Choose Roll Path", nullptr, config);
         }
         ImGui::SameLine();
         ImGui::Checkbox("Apply##00", (bool*)&metaEdit.a_rollPath);
@@ -1009,7 +1090,7 @@ void mainWindow::localMetaPopup() {
             if (validRoll()) {
                 if (validIm()) {
                     int curFrame = metaEdit.frameNum;
-                    for (int i = activeRoll()->selIm; i < activeRollSize(); i++) {
+                    for (int i = activeRoll()->selIm; i < activeRoll()->rollSize(); i++) {
                         if (getImage(i)) {
                             getImage(i)->imgMeta.frameNumber = curFrame;
                             curFrame++;
@@ -1249,23 +1330,27 @@ void mainWindow::preferencesPopup() {
         ImGui::Text("OCIO Configs:");
         ImGui::Combo("###04", &ocioSel, ocioProc.getConfigList().data(), ocioProc.getConfigList().size());
 
-        ImGui::Text("Custom OCIO Config:");
-        ImGui::InputText("###03", ocioPath, IM_ARRAYSIZE(ocioPath));
-        ImGui::SameLine();
-        if (ImGui::Button("Open")) {
-            auto selection = ShowFileOpenDialog(false);
-            if (!selection.empty()) {
-                if (!ocioProc.initExtConfig(selection[0])) {
-                    //We've supplied a bad config
-                    badOcioText = true;
-                } else {
-                    badOcioText = false;
-                    tmpPrefs.ocioPath = selection[0];
-                    std::strcpy(ocioPath, tmpPrefs.ocioPath.c_str());
-                    ocioProc.setActiveConfig(-1);
+                ImGui::Text("Custom OCIO Config:");
+
+                ImGui::InputText("###03", ocioPath, IM_ARRAYSIZE(ocioPath));
+
+                ImGui::SameLine();
+
+                if (ImGui::Button("Open")) {
+
+                    IGFD::FileDialogConfig config;
+
+                    config.path = ".";
+
+                    config.countSelectionMax = 1;
+
+                    config.flags = ImGuiFileDialogFlags_Modal;
+
+                    IGFD::FileDialog::Instance()->OpenDialog("ChooseOCIOConfig", "Choose OCIO Config", ".ocio", config);
+
                 }
-            }
-        }
+
+        
         if (badOcioText) {
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255,0,0,255));
             ImGui::Text("Invalid Config!");
@@ -1475,8 +1560,7 @@ void mainWindow::importImMatchPopup() {
         if (ImMatchRoll) {
             if (ImGui::BeginChild("##Basket", ImVec2(-FLT_MIN, ImGui::GetFontSize() * 6), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY))
             {
-                for (int n = 0; n < activeRoll()->metaImp.size(); n++)
-                {
+                for (int n = 0; n < activeRoll()->metaImp.size(); n++) {
                     ImGui::SetNextItemSelectionUserData(n);
                     ImGui::Checkbox(activeRoll()->metaImp[n].imName.c_str(), &activeRoll()->metaImp[n].selected);
                 }
@@ -1779,3 +1863,162 @@ void mainWindow::releaseNotesPopup() {
         ImGui::EndPopup();
     }
 }
+
+//--- File Dialog Popup ---//
+void mainWindow::fileDialogPopup() {
+    ImVec2 maxSize = ImVec2((float)winWidth, (float)winHeight);
+    ImVec2 minSize = ImVec2((float)winWidth * 0.5f, (float)winHeight * 0.5f);
+
+    // Choose Import Images
+    if (IGFD::FileDialog::Instance()->Display("ChooseImportImages", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+        if (IGFD::FileDialog::Instance()->IsOk()) {
+            std::map<std::string, std::string> selection = IGFD::FileDialog::Instance()->GetSelection();
+            std::vector<std::string> files;
+            for (auto const& [key, val] : selection) {
+                files.push_back(val); // val is full path
+            }
+            if (files.size() > 0) {
+                dispImportPop = true;
+                importFiles = files;
+                checkForRaw();
+            }
+        }
+        IGFD::FileDialog::Instance()->Close();
+    }
+
+    // Choose Import Rolls (Folders)
+    if (IGFD::FileDialog::Instance()->Display("ChooseImportRolls", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+        if (IGFD::FileDialog::Instance()->IsOk()) {
+            std::map<std::string, std::string> selection = IGFD::FileDialog::Instance()->GetSelection();
+             std::vector<std::string> files;
+            for (auto const& [key, val] : selection) {
+                files.push_back(val);
+            }
+            if (files.size() > 0) {
+                std::sort(files.begin(), files.end());
+                dispImpRollPop = true;
+                importFiles = files;
+                checkForRaw();
+            }
+        }
+        IGFD::FileDialog::Instance()->Close();
+    }
+
+    // Choose Roll JSON
+    if (IGFD::FileDialog::Instance()->Display("ChooseRollJSON", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+        if (IGFD::FileDialog::Instance()->IsOk()) {
+             std::string filePathName = IGFD::FileDialog::Instance()->GetFilePathName();
+             if (validRoll()) {
+                if(activeRoll()->importRollMetaJSON(filePathName)) {
+                    imMatchPopTrig = true;
+                    ImMatchRoll = true;
+                } else {
+                     std::strcpy(ackMsg, "Metadata failed to import:");
+                     if (strlen(ackError) == 0) std::strcpy(ackError, "Failed to parse metadata file!");
+                     ackPopTrig = true;
+                }
+             }
+        }
+        IGFD::FileDialog::Instance()->Close();
+    }
+
+    // Choose Image JSON
+    if (IGFD::FileDialog::Instance()->Display("ChooseImageJSON", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+        if (IGFD::FileDialog::Instance()->IsOk()) {
+             std::string filePathName = IGFD::FileDialog::Instance()->GetFilePathName();
+             imgMetImp.clear();
+             imgMetImp.push_back(filePathName);
+             imMatchPopTrig = true;
+        }
+        IGFD::FileDialog::Instance()->Close();
+    }
+
+        // Choose OCIO Config
+
+        if (IGFD::FileDialog::Instance()->Display("ChooseOCIOConfig", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+
+            if (IGFD::FileDialog::Instance()->IsOk()) {
+
+                 std::string filePathName = IGFD::FileDialog::Instance()->GetFilePathName();
+
+                 if (!ocioProc.initExtConfig(filePathName)) {
+
+                    badOcioText = true;
+
+                 } else {
+
+                    badOcioText = false;
+
+                    tmpPrefs.ocioPath = filePathName;
+
+                    std::strcpy(ocioPath, tmpPrefs.ocioPath.c_str());
+
+                    ocioProc.setActiveConfig(-1);
+
+                 }
+
+            }
+
+            IGFD::FileDialog::Instance()->Close();
+
+        }
+
+    
+
+        // Choose New Roll Dir
+
+        if (IGFD::FileDialog::Instance()->Display("ChooseNewRollDir", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+
+            if (IGFD::FileDialog::Instance()->IsOk()) {
+
+                std::string filePathName = IGFD::FileDialog::Instance()->GetFilePathName();
+
+                strcpy(rollPath, filePathName.c_str());
+
+            }
+
+            IGFD::FileDialog::Instance()->Close();
+
+        }
+
+    
+
+        // Choose Export Dir
+
+        if (IGFD::FileDialog::Instance()->Display("ChooseExportDir", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+
+            if (IGFD::FileDialog::Instance()->IsOk()) {
+
+                std::string filePathName = IGFD::FileDialog::Instance()->GetFilePathName();
+
+                strcpy(exportPathBuf, filePathName.c_str());
+
+            }
+
+            IGFD::FileDialog::Instance()->Close();
+
+        }
+
+    
+
+        // Choose Roll Path
+
+        if (IGFD::FileDialog::Instance()->Display("ChooseRollPath", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+
+            if (IGFD::FileDialog::Instance()->IsOk()) {
+
+                std::string filePathName = IGFD::FileDialog::Instance()->GetFilePathName();
+
+                std::strcpy(metaEdit.rollPath, filePathName.c_str());
+
+                metaEdit.a_rollPath = true;
+
+            }
+
+            IGFD::FileDialog::Instance()->Close();
+
+        }
+
+    }
+
+    

@@ -26,6 +26,7 @@
 #include "imgui_internal.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include <ImGuiFileDialog.h>
 
 //Logging
 #include "logger.h"
@@ -153,6 +154,7 @@ class mainWindow
         char ocioPath[1024];
         int ocioSel = 0;
         bool demoWin = false;
+        char exportPathBuf[1024];
 
 
 
@@ -303,6 +305,7 @@ class mainWindow
         void aboutPopup();
         void contactSheetPopup();
         void releaseNotesPopup();
+        void fileDialogPopup();
 
         void copyIntoParams();
         void pasteIntoParams();
